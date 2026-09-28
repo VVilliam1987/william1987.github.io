@@ -1,15 +1,26 @@
-
 (function () {
     'use strict';
 
-    console.log('[Streamed Plugin] Файл плагіна версії 3.0 (CORS Fixed) завантажено!');
+    console.log('[Streamed Plugin] Файл плагіна версії 4.0 завантажено!');
 
-    // Базовий URL API та проксі для обходу CORS
     const API_ORIGINAL = 'https://streamed.st/api';
     const PROXY_URL = 'https://corsproxy.io/?';
 
     function getProxyUrl(path) {
         return PROXY_URL + encodeURIComponent(API_ORIGINAL + path);
+    }
+
+    // Допоміжні функції для безпечного показу/приховування лоадера
+    function showLoader() {
+        if (window.Lampa && Lampa.Loading) {
+            Lampa.Loading.start();
+        }
+    }
+
+    function hideLoader() {
+        if (window.Lampa && Lampa.Loading) {
+            Lampa.Loading.stop();
+        }
     }
 
     // Компонент перегляду списку матчів
@@ -19,7 +30,7 @@
         let category = object.category;
 
         this.create = function () {
-            this.activity.loader(true);
+            showLoader();
 
             scroll = new Lampa.Scroll({ mask: true, over: true });
             items_container = new Lampa.Empty();
@@ -39,11 +50,8 @@
 
             let url = getProxyUrl(path);
 
-            console.log('[Streamed Plugin] Запит матчів через проксі:', url);
-
             Lampa.Network.silent(url, function (data) {
-                comp.activity.loader(false);
-                console.log('[Streamed Plugin] Отримано матчі:', data);
+                hideLoader();
 
                 if (data && Array.isArray(data) && data.length) {
                     comp.buildList(data);
@@ -52,7 +60,7 @@
                     scroll.append(empty.render());
                 }
             }, function (err) {
-                comp.activity.loader(false);
+                hideLoader();
                 console.error('[Streamed Plugin] Помилка завантаження матчів:', err);
                 Lampa.Noty.show('Помилка завантаження даних Streamed.st');
             });
@@ -112,14 +120,12 @@
         };
 
         this.loadStreamUrl = function (source) {
-            Lampa.Activity.loader(true);
+            showLoader();
 
             let streamUrl = getProxyUrl('/stream/' + source.source + '/' + source.id);
 
-            console.log('[Streamed Plugin] Отримання потоку:', streamUrl);
-
             Lampa.Network.silent(streamUrl, function (res) {
-                Lampa.Activity.loader(false);
+                hideLoader();
                 if (res && res.stream) {
                     Lampa.Player.play({
                         url: res.stream,
@@ -130,7 +136,7 @@
                     Lampa.Noty.show('Не вдалося отримати потік для відтворення');
                 }
             }, function (err) {
-                Lampa.Activity.loader(false);
+                hideLoader();
                 console.error('[Streamed Plugin] Помилка потоку:', err);
                 Lampa.Noty.show('Помилка отримання медіапотоку');
             });
@@ -167,12 +173,11 @@
     // Відкриття вибору видів спорту
     function openSportsMenu() {
         try {
-            Lampa.Activity.loader(true);
+            showLoader();
             let url = getProxyUrl('/sports');
-            console.log('[Streamed Plugin] Отримуємо види спорту через проксі:', url);
 
             Lampa.Network.silent(url, function (sports) {
-                Lampa.Activity.loader(false);
+                hideLoader();
 
                 let sportsList = [
                     { title: 'Всі трансляції', category: { id: 'all', name: 'Всі' } }
@@ -204,12 +209,12 @@
                     }
                 });
             }, function (err) {
-                Lampa.Activity.loader(false);
+                hideLoader();
                 console.error('[Streamed Plugin] Помилка завантаження видів спорту:', err);
                 Lampa.Noty.show('Помилка завантаження видів спорту');
             });
         } catch (e) {
-            Lampa.Activity.loader(false);
+            hideLoader();
             console.error('[Streamed Plugin] Перехоплено помилку виконання:', e);
             Lampa.Noty.show('Помилка виконання скрипта');
         }
@@ -247,7 +252,7 @@
 
     function init() {
         Lampa.Component.add('streamed_matches', StreamedMatchesComponent);
-        Lampa.Noty.show('Плагін Трансляції підключено (v3.0)');
+        Lampa.Noty.show('Плагін Трансляції підключено (v4.0)');
 
         let timer = setInterval(function () {
             if ($('.menu .menu__list').length) {
