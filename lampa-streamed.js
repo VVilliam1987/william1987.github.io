@@ -1,6 +1,8 @@
 (function () {
     'use strict';
 
+    console.log('[Streamed Plugin] Файл плагіна успішно завантажено та запущено!');
+
     const API_BASE = 'https://streamed.st/api';
 
     // Компонент перегляду списку матчів за видом спорту
@@ -28,16 +30,21 @@
                 ? API_BASE + '/matches/' + category.id + '/all' 
                 : API_BASE + '/matches/all';
 
+            console.log('[Streamed Plugin] Запит матчів:', url);
+
             Lampa.Network.silent(url, function (data) {
                 comp.activity.loader(false);
+                console.log('[Streamed Plugin] Отримано матчі:', data);
+
                 if (data && data.length) {
                     comp.buildList(data);
                 } else {
                     let empty = new Lampa.Empty({ title: 'Немає доступних трансляцій' });
                     scroll.append(empty.render());
                 }
-            }, function () {
+            }, function (err) {
                 comp.activity.loader(false);
+                console.error('[Streamed Plugin] Помилка завантаження матчів:', err);
                 Lampa.Noty.show('Помилка завантаження даних Streamed.st');
             });
         };
@@ -54,7 +61,7 @@
                     <div class="full-start__item selector focusable" style="padding: 15px; margin-bottom: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
                         <div style="font-size: 1.1em; font-weight: bold;">${match.title}</div>
                         <div style="font-size: 0.85em; margin-top: 5px; color: #aaa;">
-                            ${statusText} | Початок: ${timeStr} | Джерело: ${match.sources ? match.sources.length : 0}
+                            ${statusText} | Початок: ${timeStr} | Джерел: ${match.sources ? match.sources.length : 0}
                         </div>
                     </div>
                 `);
@@ -99,9 +106,12 @@
             Lampa.Activity.loader(true);
 
             let streamUrl = API_BASE + '/stream/' + source.source + '/' + source.id;
+            console.log('[Streamed Plugin] Отримання потоку:', streamUrl);
 
             Lampa.Network.silent(streamUrl, function (res) {
                 Lampa.Activity.loader(false);
+                console.log('[Streamed Plugin] Відповідь потоку:', res);
+
                 if (res && res.stream) {
                     Lampa.Player.play({
                         url: res.stream,
@@ -111,8 +121,9 @@
                 } else {
                     Lampa.Noty.show('Не вдалося отримати потік для відтворення');
                 }
-            }, function () {
+            }, function (err) {
                 Lampa.Activity.loader(false);
+                console.error('[Streamed Plugin] Помилка потоку:', err);
                 Lampa.Noty.show('Помилка отримання медіапотоку');
             });
         };
@@ -147,8 +158,9 @@
 
     // Додавання пункту в меню
     function addMenuItem() {
-        // Перевіряємо, чи вже додано пункт, щоб уникнути дублювання
         if ($('.menu .menu__item[data-action="streamed_sports"]').length > 0) return;
+
+        console.log('[Streamed Plugin] Додаємо пункт "Трансляції" у ліве меню...');
 
         let svgIcon = `<svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>`;
 
@@ -162,8 +174,11 @@
         menu_item.on('hover:enter', function () {
             Lampa.Activity.loader(true);
             
+            console.log('[Streamed Plugin] Запит списку видів спорту...');
+
             Lampa.Network.silent(API_BASE + '/sports', function (sports) {
                 Lampa.Activity.loader(false);
+                console.log('[Streamed Plugin] Отримано види спорту:', sports);
 
                 let sportsList = [
                     { title: 'Всі трансляції', category: { id: 'all', name: 'Всі' } }
@@ -194,31 +209,37 @@
                         Lampa.Controller.toggle('menu');
                     }
                 });
-            }, function () {
+            }, function (err) {
                 Lampa.Activity.loader(false);
+                console.error('[Streamed Plugin] Помилка завантаження видів спорту:', err);
                 Lampa.Noty.show('Помилка завантаження видів спорту');
             });
         });
 
-        // Вставляємо перед "Налаштуваннями" або в кінець списку меню
+        // Додаємо пункт в ліве меню
         let settings_item = $('.menu .menu__item[data-action="settings"]');
         if (settings_item.length) {
             settings_item.before(menu_item);
         } else {
             $('.menu .menu__list').append(menu_item);
         }
+
+        console.log('[Streamed Plugin] Пункт "Трансляції" додано в меню!');
     }
 
     // Головна функція запуску
     function init() {
+        console.log('[Streamed Plugin] Ініціалізація компонента...');
+        
+        // Показуємо плаваюче сповіщення про запуск плагіна
+        Lampa.Noty.show('Плагін Трансляції підключено');
+
         Lampa.Component.add('streamed_matches', StreamedMatchesComponent);
 
-        // Спроба додати пункт одразу (якщо меню вже створено)
         if ($('.menu .menu__list').length) {
             addMenuItem();
         }
 
-        // Слухаємо події для випадку, якщо меню перестворюється
         Lampa.Listener.follow('app', function (e) {
             if (e.type === 'ready' || e.type === 'menu') {
                 addMenuItem();
@@ -226,7 +247,7 @@
         });
     }
 
-    // Безпечний запуск плагіна
+    // Запуск
     if (window.appready) {
         init();
     } else {
