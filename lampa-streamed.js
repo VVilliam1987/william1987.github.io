@@ -1,11 +1,27 @@
 (function () {
     'use strict';
 
-    console.log('[Streamed Plugin] v5.2 loaded');
+    console.log('[Streamed Plugin] v5.3 loaded');
 
-    // Актуальний домен API та стабільний проксі для CORS
     const API_ORIGINAL = 'https://streamed.pk/api';
     const PROXY_URL = 'https://api.allorigins.win/raw?url=';
+
+    // Словник перекладу видів спорту українською
+    const SPORTS_TRANSLATE = {
+        'football': 'Футбол',
+        'basketball': 'Баскетбол',
+        'american-football': 'Американський футбол',
+        'hockey': 'Хокей',
+        'baseball': 'Бейсбол',
+        'motor-sports': 'Авто/Мотоспорт',
+        'fight': 'Єдиноборства / UFC',
+        'tennis': 'Теніс',
+        'rugby': 'Регбі',
+        'cricket': 'Крикет',
+        'darts': 'Дартс',
+        'gulf': 'Гольф',
+        'other': 'Інші трансляції'
+    };
 
     function getProxyUrl(path) {
         return PROXY_URL + encodeURIComponent(API_ORIGINAL + path);
@@ -32,6 +48,10 @@
             scroll.render().addClass('category-full');
             scroll.append(items_container.render());
             this.loadData();
+        };
+
+        // Обов'язковий метод для Lampa Activity
+        this.render = function () {
             return scroll.render();
         };
 
@@ -139,7 +159,11 @@
             let sportsList = [{ title: 'Всі трансляції', category: { id: 'all', name: 'Всі' } }];
 
             if (sports && Array.isArray(sports)) {
-                sports.forEach(s => sportsList.push({ title: s.name || s.id, category: s }));
+                sports.forEach(s => {
+                    let key = s.id || s.name || '';
+                    let translatedName = SPORTS_TRANSLATE[key.toLowerCase()] || s.name || s.id;
+                    sportsList.push({ title: translatedName, category: s });
+                });
             }
 
             Lampa.Select.show({
@@ -182,7 +206,7 @@
 
     function init() {
         Lampa.Component.add('streamed_matches', StreamedMatchesComponent);
-        Lampa.Noty.show('Плагін Трансляції підключено (v5.2)');
+        Lampa.Noty.show('Плагін Трансляції підключено (v5.3)');
 
         let timer = setInterval(function () {
             if ($('.menu .menu__list').length) injectMenu();
