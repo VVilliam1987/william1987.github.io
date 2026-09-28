@@ -1,10 +1,11 @@
 (function () {
     'use strict';
 
-    console.log('[Streamed Plugin] v5.0 loaded');
+    console.log('[Streamed Plugin] v5.2 loaded');
 
-    const API_ORIGINAL = 'https://streamed.st/api';
-    const PROXY_URL = 'https://corsproxy.io/?';
+    // Актуальний домен API та стабільний проксі для CORS
+    const API_ORIGINAL = 'https://streamed.pk/api';
+    const PROXY_URL = 'https://api.allorigins.win/raw?url=';
 
     function getProxyUrl(path) {
         return PROXY_URL + encodeURIComponent(API_ORIGINAL + path);
@@ -35,7 +36,7 @@
         };
 
         this.loadData = function () {
-            let path = category && category.id !== 'all' ? '/matches/' + category.id + '/all' : '/matches/all';
+            let path = category && category.id !== 'all' ? '/matches/' + category.id : '/matches/all';
             let url = getProxyUrl(path);
 
             Lampa.Network.silent(url, function (data) {
@@ -47,7 +48,7 @@
                 }
             }, function () {
                 toggleLoader(false);
-                Lampa.Noty.show('Помилка завантаження даних');
+                Lampa.Noty.show('Помилка завантаження матчів');
             });
         };
 
@@ -138,7 +139,7 @@
             let sportsList = [{ title: 'Всі трансляції', category: { id: 'all', name: 'Всі' } }];
 
             if (sports && Array.isArray(sports)) {
-                sports.forEach(s => sportsList.push({ title: s.name, category: s }));
+                sports.forEach(s => sportsList.push({ title: s.name || s.id, category: s }));
             }
 
             Lampa.Select.show({
@@ -181,7 +182,7 @@
 
     function init() {
         Lampa.Component.add('streamed_matches', StreamedMatchesComponent);
-        Lampa.Noty.show('Плагін Трансляції підключено (v5.0)');
+        Lampa.Noty.show('Плагін Трансляції підключено (v5.2)');
 
         let timer = setInterval(function () {
             if ($('.menu .menu__list').length) injectMenu();
