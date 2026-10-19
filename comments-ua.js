@@ -1,0 +1,1534 @@
+;(function() {
+    'use strict';
+
+    function safeText(str) {
+        return (str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+
+    function parseHTML(html) {
+        try {
+            var str = String(html || '');
+            str = str.replace(/<(script|style|iframe|meta)[\s\S]*?<\/\1>/gi, '');
+            str = str.replace(/\bonerror\s*=/gi, 'data-err=');
+            str = str.replace(/\bonload\s*=/gi, 'data-load=');
+            str = str.replace(/\bonreadystatechange\s*=/gi, 'data-rs=');
+            str = str.replace(/\bsrc\s*=/gi, 'data-src=');
+            
+            var $doc;
+            if (window.DOMParser) {
+                try {
+                    var parsed = new DOMParser().parseFromString(str, 'text/html');
+                    if (parsed && parsed.body) $doc = $(parsed.body);
+                } catch(e) {}
+            }
+            if (!$doc && typeof $.parseHTML === 'function') {
+                try { $doc = $('<div>').append($.parseHTML(str, document, false)); } catch(e) {}
+            }
+            if (!$doc) { $doc = $('<div>' + str + '</div>'); }
+            return $doc;
+        } catch (e) {
+            console.error('UaComentsY: РљСЂРёС‚РёС‡РЅР° РїРѕРјРёР»РєР° РІ parseHTML:', e);
+            return $();
+        }
+    }
+
+    function getTriggerSafe(key, defaultVal) {
+        if (!window.Lampa || !window.Lampa.Storage) return defaultVal;
+        var val = window.Lampa.Storage.get(key);
+        if (val === undefined || val === null) return defaultVal;
+        if (val === 'false' || val === false) return false;
+        return true;
+    }
+
+    function updateCSSVars() {
+        try {
+            var root = document.documentElement;
+            if (!window.Lampa || !window.Lampa.Storage) return;
+            root.style.setProperty('--uacom-width', window.Lampa.Storage.get('uacom_width', '40ch') || '40ch');
+            root.style.setProperty('--uacom-lines', window.Lampa.Storage.get('uacom_lines', '3') || '3');
+            root.style.setProperty('--uacom-fsize', window.Lampa.Storage.get('uacom_fontsize', '1.15em') || '1.15em');
+            root.style.setProperty('--uacom-noty-width', window.Lampa.Storage.get('uacom_noty_width', '800px') || '800px');
+            root.style.setProperty('--uacom-noty-fsize', window.Lampa.Storage.get('uacom_noty_fsize', '1.3em') || '1.3em');
+        } catch(e) {}
+    }
+
+    function createSettings() {
+        if (!window.Lampa || !window.Lampa.SettingsApi) return;
+        var COMP_NAME = 'uacomentsy';
+
+        window.Lampa.SettingsApi.addComponent({
+            component: COMP_NAME,
+            name: 'UaKomentsY',
+            icon: '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+        });
+
+        function addStatic(comp, name, title, desc, onClick) {
+            window.Lampa.SettingsApi.addParam({
+                component: comp, param: { name: name, type: "static" },
+                field: { name: title, description: desc },
+                onRender: function (item) { item.on("hover:enter click", onClick); }
+            });
+        }
+
+        function addToggle(comp, name, title, desc, def) {
+            window.Lampa.SettingsApi.addParam({ component: comp, param: { name: name, type: "trigger", "default": def }, field: { name: title, description: desc } });
+        }
+
+        function addSelect(comp, name, title, desc, values, def) {
+            window.Lampa.SettingsApi.addParam({
+                component: comp, param: { name: name, type: "select", values: values, "default": def },
+                field: { name: title, description: desc },
+                onChange: function(val) { window.Lampa.Storage.set(name, val); updateCSSVars(); }
+            });
+        }
+        
+        function addInputText(comp, name, title, desc, def) {
+            window.Lampa.SettingsApi.addParam({
+                component: comp, 
+                param: { name: name, type: "button" }, 
+                field: { name: title, description: desc },
+                onRender: function (item) {
+                    var valBlock = $('<div class="settings-param__value"></div>');
+                    var currentVal = window.Lampa.Storage.get(name);
+                    if (currentVal === undefined || currentVal === null) currentVal = def;
+                    
+                    valBlock.text(currentVal ? currentVal : 'РќРµ РІРєР°Р·Р°РЅРѕ');
+                    item.append(valBlock);
+
+                    var is_editing = false;
+
+                    item.on("hover:enter click", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        if (is_editing) return;
+                        is_editing = true;
+                        
+                        setTimeout(function() { is_editing = false; }, 800);
+
+                        if (window.Lampa.Input) {
+                            window.Lampa.Input.edit({
+                                title: title,
+                                value: window.Lampa.Storage.get(name) || '',
+                                free: true,
+                                nosave: true 
+                            }, function (new_val) {
+                                window.Lampa.Storage.set(name, new_val);
+                                valBlock.text(new_val ? new_val : 'РќРµ РІРєР°Р·Р°РЅРѕ');
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        addStatic(COMP_NAME, 'uacom_support', 'РџС–РґС‚СЂРёРјР°С‚Рё', 'РќР°С‚РёСЃРЅС–С‚СЊ, С‰РѕР± РІС–РґРєСЂРёС‚Рё СЃС‚РѕСЂС–РЅРєСѓ https://lampalampa.free.nf/', function() {
+            if (window.Lampa.Noty) window.Lampa.Noty.show('РџРµСЂРµР№РґС–С‚СЊ Р·Р° Р°РґСЂРµСЃРѕСЋ: https://lampalampa.free.nf/');
+            setTimeout(function() { if (window.open) window.open('https://lampalampa.free.nf/', '_blank'); }, 500);
+        });
+
+        window.Lampa.SettingsApi.addParam({ component: COMP_NAME, param: { name: 'uacom_title_src', type: 'title' }, field: { name: 'Р”Р¶РµСЂРµР»Р° РєРѕРјРµРЅС‚Р°СЂС–РІ' } });
+        addToggle(COMP_NAME, 'uacom_src_uakino', 'Р”Р¶РµСЂРµР»Рѕ: UaKino', 'РЁСѓРєР°С‚Рё РєРѕРјРµРЅС‚Р°СЂС– РЅР° UaKino', false);
+        addToggle(COMP_NAME, 'uacom_src_uaflix', 'Р”Р¶РµСЂРµР»Рѕ: UAFlix', 'РЁСѓРєР°С‚Рё РєРѕРјРµРЅС‚Р°СЂС– РЅР° UAFlix', true);
+        addToggle(COMP_NAME, 'uacom_src_uaserials', 'Р”Р¶РµСЂРµР»Рѕ: UASerials', 'РЁСѓРєР°С‚Рё РєРѕРјРµРЅС‚Р°СЂС– РЅР° UASerials (РІРєР». РґР·РµСЂРєР°Р»Р°)', true);
+        addToggle(COMP_NAME, 'uacom_src_kinobaza', 'Р”Р¶РµСЂРµР»Рѕ: KinoBaza', 'РЁСѓРєР°С‚Рё РєРѕРјРµРЅС‚Р°СЂС– РЅР° KinoBaza', true);
+        addToggle(COMP_NAME, 'uacom_src_kinostrain', 'Р”Р¶РµСЂРµР»Рѕ: KinoStrain', 'РЁСѓРєР°С‚Рё РєРѕРјРµРЅС‚Р°СЂС– РЅР° KinoStrain', true);
+
+        window.Lampa.SettingsApi.addParam({ component: COMP_NAME, param: { name: 'uacom_title_net', type: 'title' }, field: { name: 'РњРµСЂРµР¶Р°' } });
+        addInputText(COMP_NAME, 'uacom_custom_proxies', 'Р’Р»Р°СЃРЅС– CORS РїСЂРѕРєСЃС–', 'Р’РІРµРґС–С‚СЊ С‡РµСЂРµР· РєРѕРјСѓ. РџСЂР°С†СЋСЋС‚СЊ РїРµСЂС€РѕС‡РµСЂРіРѕРІРѕ.', '');
+
+        window.Lampa.SettingsApi.addParam({ component: COMP_NAME, param: { name: 'uacom_title_ui', type: 'title' }, field: { name: 'Р—РѕРІРЅС–С€РЅС–Р№ РІРёРіР»СЏРґ (РљР°СЂС‚РєРё)' } });
+        addSelect(COMP_NAME, 'uacom_width', 'РЁРёСЂРёРЅР° РєР°СЂС‚РєРё', 'РќР°Р»Р°С€С‚СѓРІР°РЅРЅСЏ С€РёСЂРёРЅРё Р±Р»РѕРєСѓ', { '30ch': 'Р’СѓР·СЊРєР°', '40ch': 'РЎРµСЂРµРґРЅСЏ', '60ch': 'РЁРёСЂРѕРєР°', '80vw': 'РќР° РІРµСЃСЊ РµРєСЂР°РЅ' }, '40ch');
+        addSelect(COMP_NAME, 'uacom_lines', 'Р’РёСЃРѕС‚Р° С‚РµРєСЃС‚Сѓ (СЂСЏРґРєРё)', 'РњР°РєСЃРёРјР°Р»СЊРЅР° РєС–Р»СЊРєС–СЃС‚СЊ СЂСЏРґРєС–РІ', { '2': '2 СЂСЏРґРєРё', '3': '3 СЂСЏРґРєРё', '4': '4 СЂСЏРґРєРё', '5': '5 СЂСЏРґРєС–РІ', '10': '10 СЂСЏРґРєС–РІ' }, '3');
+        addSelect(COMP_NAME, 'uacom_fontsize', 'Р РѕР·РјС–СЂ С€СЂРёС„С‚Сѓ', '', { '0.9em': 'Р”СЂС–Р±РЅРёР№', '1.15em': 'РЎРµСЂРµРґРЅС–Р№', '1.3em': 'Р’РµР»РёРєРёР№', '1.5em': 'Р”СѓР¶Рµ РІРµР»РёРєРёР№' }, '1.15em');
+
+        window.Lampa.SettingsApi.addParam({ component: COMP_NAME, param: { name: 'uacom_title_notify', type: 'title' }, field: { name: 'Р’С–РґРєСЂРёС‚РёР№ РєРѕРјРµРЅС‚Р°СЂ' } });
+        addSelect(COMP_NAME, 'uacom_noty_width', 'РЁРёСЂРёРЅР° РІС–РєРЅР°', '', { '600px': 'РљРѕРјРїР°РєС‚РЅРµ', '800px': 'РЎРµСЂРµРґРЅС”', '1200px': 'РЁРёСЂРѕРєРµ', '95vw': 'РќР° РІРµСЃСЊ РµРєСЂР°РЅ' }, '800px');
+        addSelect(COMP_NAME, 'uacom_noty_fsize', 'Р РѕР·РјС–СЂ С€СЂРёС„С‚Сѓ', '', { '1.1em': 'Р”СЂС–Р±РЅРёР№', '1.3em': 'РЎРµСЂРµРґРЅС–Р№', '1.6em': 'Р’РµР»РёРєРёР№', '2.0em': 'Р”СѓР¶Рµ РІРµР»РёРєРёР№' }, '1.3em');
+    }
+
+    var UaCommentViewer = {
+        active: false,
+        element: null,
+        comments:[],
+        currentIndex: 0,
+        focusedCardElement: null,
+        keydownHandler: null,
+        isClosing: false,
+        previousController: null,
+
+        show: function(commentsList, startIndex, focusedCardElement) {
+            if (this.active) this.close();
+            this.active = true;
+            this.isClosing = false;
+            this.comments = commentsList;
+            this.currentIndex = startIndex;
+            this.focusedCardElement = focusedCardElement;
+
+            var html = '<div class="uacom-overlay">' +
+                            '<div class="uacom-modal">' +
+                                '<div class="uacom-body"></div>' +
+                                '<div class="uacom-head">' + 
+                                    '<div class="uacom-leftside">' +
+                                        '<div class="uacom-arrow arrow-left">&#9664;</div>' +
+                                        '<div class="uacom-meta">' +
+                                            '<div class="uacom-title"></div>' +
+                                            '<div class="uacom-author"></div>' +
+                                        '</div>' +
+                                    '</div>' +
+                                    '<div class="uacom-rightside">' +
+                                        '<div class="uacom-counter"></div>' +
+                                        '<div class="uacom-arrow arrow-right">&#9654;</div>' +
+                                        '<div class="uacom-close selector">&#10005;</div>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div class="uacom-swipe-handle" aria-hidden="true"><span></span></div>' +
+                            '</div>' +
+                        '</div>';
+
+            this.element = $(html);
+            $('body').append(this.element);
+
+            var _this = this;
+            this.element.find('.uacom-close').on('hover:enter click', function(e) { e.preventDefault(); e.stopPropagation(); _this.close(); });
+            this.element.find('.arrow-left').on('click', function() { _this.goLeft(); });
+            this.element.find('.arrow-right').on('click', function() { _this.goRight(); });
+            
+            this.element.on('click', function(e) { if (e.target === this) { e.preventDefault(); e.stopPropagation(); _this.close(); } });
+
+            // Р РµС”СЃС‚СЂСѓС”РјРѕ СЃРІР°Р№РїРё
+            var modalEl = this.element.find('.uacom-modal')[0];
+            if (modalEl) {
+                var startX = 0, startY = 0, startTime = 0, tracking = false, closeCandidate = false;
+
+                modalEl.addEventListener('touchstart', function(e) {
+                    if (!_this.active || !e.touches || e.touches.length !== 1) return;
+                    var touch = e.touches[0];
+                    var rect = modalEl.getBoundingClientRect();
+                    startX = touch.clientX;
+                    startY = touch.clientY;
+                    startTime = Date.now();
+                    tracking = true;
+                    closeCandidate = startY >= rect.bottom - Math.min(120, rect.height * 0.2);
+                }, { passive: false });
+
+                modalEl.addEventListener('touchmove', function(e) {
+                    if (!tracking || !e.touches || e.touches.length !== 1) return;
+                    var touch = e.touches[0];
+                    var dx = touch.clientX - startX;
+                    var dy = touch.clientY - startY;
+                    var horizontal = Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.15;
+                    var closing = closeCandidate && dy < -14 && Math.abs(dy) > Math.abs(dx) * 1.15;
+                    
+                    if ((horizontal || closing) && e.cancelable) e.preventDefault();
+                }, { passive: false });
+
+                modalEl.addEventListener('touchend', function(e) {
+                    if (!tracking || !e.changedTouches || !e.changedTouches.length) { tracking = false; return; }
+                    var touch = e.changedTouches[0];
+                    var dx = touch.clientX - startX;
+                    var dy = touch.clientY - startY;
+                    var elapsed = Date.now() - startTime;
+                    var horizontal = Math.abs(dx) >= 55 && Math.abs(dx) > Math.abs(dy) * 1.2;
+                    var closing = closeCandidate && dy <= -75 && Math.abs(dy) > Math.abs(dx) * 1.15;
+                    tracking = false;
+
+                    if (elapsed > 900) return;
+                    if (horizontal) {
+                        if (dx < 0) _this.goRight();
+                        else if (dx > 0) _this.goLeft();
+                    } else if (closing) {
+                        _this.close();
+                    }
+                }, { passive: false });
+            }
+
+            this.updateUI();
+
+            if (window.Lampa && window.Lampa.Controller) {
+                var enabledC = window.Lampa.Controller.enabled();
+                this.previousController = enabledC ? enabledC.name : 'full';
+
+                window.Lampa.Controller.add('uacom_viewer', {
+                    toggle: function() {
+                        window.Lampa.Controller.collectionSet(_this.element[0]);
+                        window.Lampa.Controller.collectionFocus(_this.element.find('.uacom-close')[0], _this.element[0]);
+                    },
+                    left: function() { _this.goLeft(); },
+                    right: function() { _this.goRight(); },
+                    up: function() {
+                        var body = _this.element.find('.uacom-body');
+                        if (body.length) body.scrollTop(body.scrollTop() - 180); 
+                    },
+                    down: function() {
+                        var body = _this.element.find('.uacom-body');
+                        if (body.length) body.scrollTop(body.scrollTop() + 180); 
+                    },
+                    enter: function() {
+                        var focused = _this.element.find('.focus');
+                        if (focused.length) { focused.trigger('hover:enter').trigger('click'); } else { _this.close(); }
+                    },
+                    back: function() { _this.close(); }
+                });
+                window.Lampa.Controller.toggle('uacom_viewer');
+            } else {
+                setTimeout(function() { var closeBtn = _this.element.find('.uacom-close')[0]; if (closeBtn) closeBtn.focus(); }, 20);
+                if (!this.keydownHandler) { this.keydownHandler = function(e) { _this.handleKeydown(e); }; }
+                window.addEventListener('keydown', this.keydownHandler, true);
+            }
+        },
+
+        handleKeydown: function(e) {
+            var code = e.keyCode;
+            if (code === 37) { e.preventDefault(); e.stopPropagation(); this.goLeft(); } 
+            else if (code === 39) { e.preventDefault(); e.stopPropagation(); this.goRight(); } 
+            else if (code === 38) { e.preventDefault(); e.stopPropagation(); var bodyUp = this.element.find('.uacom-body'); if (bodyUp.length) bodyUp.scrollTop(bodyUp.scrollTop() - 180); } 
+            else if (code === 40) { e.preventDefault(); e.stopPropagation(); var bodyDown = this.element.find('.uacom-body'); if (bodyDown.length) bodyDown.scrollTop(bodyDown.scrollTop() + 180); } 
+            else if (code === 13 || code === 8 || code === 27 || code === 10009 || code === 461) { e.preventDefault(); e.stopPropagation(); this.close(); }
+        },
+
+        updateUI: function() {
+            if (!this.element) return;
+            var data = this.comments[this.currentIndex];
+            var sourceIcon = '';
+            
+            if (data.source === 'UaKino') sourceIcon = '<img src="https://yarikrazor-star.github.io/lmp/uak.png" class="ua-source-icon" style="width:16px; height:16px; border-radius:3px; margin-right:6px;">';
+            else if (data.source === 'UAFlix') sourceIcon = '<img src="https://yarikrazor-star.github.io/lmp/uaf.png" class="ua-source-icon" style="width:16px; height:16px; border-radius:3px; margin-right:6px;">';
+            else if (data.source === 'UASerials') sourceIcon = '<img src="https://upload.wikimedia.org/wikipedia/commons/d/d4/Clapperboard_-_The_Noun_Project.svg" class="ua-source-icon" style="filter: brightness(0) invert(1); width:16px; height:16px; border-radius:3px; margin-right:6px;">';
+            else if (data.source === 'KinoBaza') sourceIcon = '<img src="https://kinobaza.com.ua/assets/img/kinobazav4.svg" class="ua-source-icon" style="width:16px; height:16px; border-radius:3px; margin-right:6px;">';
+            else if (data.source === 'KinoStrain') sourceIcon = '<span class="ua-source-icon" style="background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); color: #fff; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: bold; width: 16px; height: 16px; margin-right: 6px; box-sizing: border-box;">KS</span>';
+
+            var titleStr = sourceIcon + (data.source === 'KinoBaza' && data.isReview ? 'Р РµС†РµРЅР·С–СЏ' : data.source);
+
+            this.element.find('.uacom-title').html(titleStr);
+            this.element.find('.uacom-author').text(data.author);
+            this.element.find('.uacom-counter').text((this.currentIndex + 1) + ' / ' + this.comments.length);
+            
+            var body = this.element.find('.uacom-body');
+            body.html(safeText(data.text));
+            body.find('a').removeAttr('href target');
+            body.scrollTop(0);
+
+            this.element.find('.arrow-left').toggleClass('active', this.currentIndex > 0);
+            this.element.find('.arrow-right').toggleClass('active', this.currentIndex < this.comments.length - 1);
+        },
+
+        goLeft: function() { if (this.currentIndex > 0) { this.currentIndex = this.currentIndex - 1; this.updateUI(); } },
+        goRight: function() { if (this.currentIndex < this.comments.length - 1) { this.currentIndex = this.currentIndex + 1; this.updateUI(); } },
+
+        close: function() {
+            if (!this.active || this.isClosing) return;
+            this.isClosing = true;
+            this.active = false;
+            
+            if (window.Lampa && window.Lampa.Controller) { window.Lampa.Controller.toggle(this.previousController || 'full'); } 
+            else { window.removeEventListener('keydown', this.keydownHandler, true); }
+
+            if (this.element) { this.element.remove(); this.element = null; }
+            
+            var finalIndex = this.currentIndex;
+            var initialCard = this.focusedCardElement;
+
+            setTimeout(function() {
+                var targetCard = $('.ua-comment-card[data-idx="' + finalIndex + '"]');
+                var target = targetCard.length ? targetCard[0] : initialCard;
+                
+                if (target && window.Lampa && window.Lampa.Controller) {
+                    var slider = $(target).closest('.ua-comments-slider');
+                    if (slider.length) {
+                        Lampa.Controller.collectionSet(slider[0]);
+                        Lampa.Controller.collectionFocus(target, slider[0]);
+                    } else {
+                        Lampa.Controller.focus(target);
+                    }
+                }
+            }, 400);
+        }
+    };
+
+    function getProxyUrl(proxy, url) {
+        if (proxy.indexOf('?url=') !== -1) return proxy + encodeURIComponent(url);
+        return proxy + url;
+    }
+
+    var network = {
+        req: function(url, onSuccess, onError, proxyIdx) {
+            var activeProxies = [];
+            var customProxiesStr = window.Lampa && window.Lampa.Storage ? window.Lampa.Storage.get('uacom_custom_proxies', '') : '';
+            if (customProxiesStr) {
+                var parts = customProxiesStr.split(',');
+                for (var i = 0; i < parts.length; i++) {
+                    var p = parts[i].trim();
+                    if (p) {
+                        if (p.indexOf('http') !== 0) p = 'https://' + p;
+                        if (p.substr(-1) !== '/' && p.indexOf('?url=') === -1) p += '/';
+                        activeProxies.push(p);
+                    }
+                }
+            }
+            activeProxies.push('https://cors.bwa.workers.dev/');
+
+            var pIdx = proxyIdx || 0;
+            if (pIdx >= activeProxies.length) { if (onError) onError(); return; }
+            
+            $.ajax({
+                url: getProxyUrl(activeProxies[pIdx], url), method: 'GET', dataType: 'text', timeout: 15000, 
+                success: function(res) {
+                    try {
+                        var body = res;
+                        if (body && typeof body === 'object') {
+                            if (typeof body.contents === 'string') body = body.contents;
+                            else if (typeof body.data === 'string') body = body.data;
+                            else body = JSON.stringify(body);
+                        }
+                        if (typeof body !== 'string' || body.length < 20) network.req(url, onSuccess, onError, pIdx + 1);
+                        else onSuccess(body);
+                    } catch(e) { if (onError) onError(); }
+                },
+                error: function() { network.req(url, onSuccess, onError, pIdx + 1); }
+            });
+        }
+    };
+
+    var parser = {
+        parse: function(html, source, primarySelector) {
+            var list =[];
+            try {
+                var doc = parseHTML(html);
+                if (!doc || !doc.length) return[]; 
+                
+                var commentsBlock = doc;
+                if (primarySelector) {
+                    var foundBlock = doc.find(primarySelector);
+                    if (foundBlock.length > 0) commentsBlock = foundBlock;
+                }
+
+                var items = commentsBlock.find('.comment, div[id^="comment-id-"], .comm-item');
+                if (!items.length && commentsBlock !== doc) {
+                    items = doc.find('.comment, div[id^="comment-id-"], .comm-item');
+                }
+
+                var signs =[];
+                items.each(function() {
+                    try {
+                        var el = $(this);
+                        if (el.parents('.comment, div[id^="comment-id-"], .comm-item').length > 0) return;
+                        
+                        var author = el.find('.comm-author, .name, .comment-author, .acc-name, b').first().text().trim();
+                        var textEl = el.find('.comm-text, .comment-content, .text, .comment-body, div[id^="comm-id-"]').clone();
+                        
+                        textEl.find('div, script, style, iframe, .comm-good-bad').remove(); 
+                        textEl.find('br').replaceWith('\n'); 
+                        
+                        var text = textEl.text().trim();
+                        text = text.replace(/(?:\s*(?:С‡РёС‚Р°С‚Рё РґР°Р»С–|РїРѕРєР°Р·Р°С‚Рё РїРѕРІРЅС–СЃС‚СЋ|С‡РёС‚Р°С‚СЊ РґР°Р»РµРµ|РїРѕРєР°Р·Р°С‚СЊ РїРѕРІРЅС–СЃС‚СЋ|read more|вЂ¦|\.\.\.|\.\.))\s*$/ig, '');
+                        
+                        if (author && text) {
+                            var sign = author + '|' + text.substring(0, 50);
+                            if (signs.indexOf(sign) === -1) {
+                                signs.push(sign);
+                                list.push({ author: author, source: source, text: text });
+                            }
+                        }
+                    } catch(e) {}
+                });
+            } catch(e) {
+                console.error('UaComentsY Parser Error:', e);
+            }
+            return list;
+        }
+    };
+
+    function UaCommentItem(data, allComments, index) {
+        this.data = data;
+        this.allComments = allComments;
+        this.index = index;
+        this.html = null;
+    }
+
+    UaCommentItem.prototype.create = function() {
+        try {
+            var _this = this;
+            var root = $('<div class="ua-comment-card selector" data-idx="' + this.index + '"></div>');
+            var topMeta = $('<div class="ua-comment-meta"></div>');
+            var textNode = $('<div class="ua-comment-text"></div>');
+            var bottomMeta = $('<div class="ua-comment-footer"></div>');
+
+            var sourceIcon = '';
+            var reviewBadge = '';
+            if (this.data.source === 'UaKino') {
+                sourceIcon = '<img src="https://yarikrazor-star.github.io/lmp/uak.png" class="ua-source-icon">';
+            } else if (this.data.source === 'UAFlix') {
+                sourceIcon = '<img src="https://yarikrazor-star.github.io/lmp/uaf.png" class="ua-source-icon">';
+            } else if (this.data.source === 'UASerials') {
+                sourceIcon = '<img src="https://upload.wikimedia.org/wikipedia/commons/d/d4/Clapperboard_-_The_Noun_Project.svg" class="ua-source-icon" style="filter: brightness(0) invert(1);">';
+            } else if (this.data.source === 'KinoBaza') {
+                sourceIcon = '<img src="https://kinobaza.com.ua/assets/img/kinobazav4.svg" class="ua-source-icon">';
+                if (this.data.isReview) {
+                    reviewBadge = '<span style="background: rgba(255, 193, 7, 0.2); color: #ffc107; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin-left: 8px; border: 1px solid rgba(255, 193, 7, 0.5); white-space: nowrap; flex-shrink: 0;">Р РµС†РµРЅР·С–СЏ</span>';
+                }
+            } else if (this.data.source === 'KinoStrain') {
+                sourceIcon = '<span class="ua-source-icon" style="background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: bold; letter-spacing: 0; box-sizing: border-box;">KS</span>';
+            }
+
+            topMeta.append('<div class="ua-chip author">' + sourceIcon + '<span class="author-name">' + this.data.author + '</span>' + reviewBadge + '</div>');
+            textNode.html(safeText(this.data.text));
+            bottomMeta.append('<div class="ua-chip read-more" style="display: none;">Р§РёС‚Р°С‚Рё РїРѕРІРЅС–СЃС‚СЋ</div>');
+
+            root.append(topMeta).append(textNode).append(bottomMeta);
+
+            root.on('hover:focus', function() {
+                var slider = root.closest('.ua-comments-slider');
+                if (!slider.length) return;
+                var targetLeft = root[0].offsetLeft - 15;
+                slider.stop(true, true).animate({ scrollLeft: targetLeft }, 200);
+            });
+
+            root.on('hover:enter click', function(e) {
+                e.preventDefault(); e.stopPropagation();
+                var slider = root.closest('.ua-comments-slider');
+                if (slider.length && slider.data('isDragging')) return;
+                if (UaCommentViewer.active) return;
+                UaCommentViewer.show(_this.allComments, _this.index, root[0]);
+            });
+
+            this.html = root;
+        } catch(e) { 
+            console.error('UaComentsY Item Error:', e);
+            this.html = $('<div></div>');
+        }
+        return this;
+    };
+
+    function InlineComments() {
+        var fetchedComments =[];
+        var observer = null;
+        var currentStatus = '';
+        var isSearchFinished = false;
+
+        this.init = function() {
+            var _this = this;
+            var style = document.createElement('style');
+            
+            style.innerHTML = 
+                ".ua-comments-root { width: 100%; max-width: 100vw; position: relative; margin-bottom: 5px; padding: 0px; z-index: 5; }\n" +
+                ".ua-comments-slider { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 15px 15px 0px 15px; width: 100%; box-sizing: border-box; align-items: stretch; position: relative; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }\n" +
+                ".ua-comments-slider::-webkit-scrollbar { display: none; }\n" +
+                ".ua-comments-slider::after { content: ''; flex: 0 0 85vw; display: block; }\n" +
+                
+                ".ua-status-card { width: 98%; background: rgba(0,0,0,0.5); border-radius: 14px; padding: 15px; box-sizing: border-box; text-align: center; color: #fff; font-size: 1.2em; margin: 0 auto; transition: background 0.3s ease; }\n" +
+                ".ua-status-card.focus { border-color: #fff; box-shadow: 0 0 15px rgba(255,255,255,0.4); }\n" +
+                
+                ".ua-comment-card { flex: 0 0 var(--uacom-width, 40ch); width: var(--uacom-width, 40ch); max-width: 80vw; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); background: #1a222c; padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease; flex-shrink: 0; cursor: pointer; margin-right: 20px; }\n" +
+                ".ua-comment-card.focus { border-color: rgba(255,255,255,0.4); transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.6); background: #26323f; color: #fff; }\n" +
+                ".ua-comment-card.focus .ua-comment-text { color: #fff; }\n" +
+                ".ua-comment-card.focus .ua-chip.read-more { background: rgba(255,255,255,0.9); color: #000; font-weight: bold; }\n" +
+                
+                ".ua-comment-meta { display: flex; justify-content: flex-start; align-items: center; margin-bottom: 15px; flex-wrap: nowrap; width: 100%; overflow: hidden; }\n" +
+                ".ua-comment-meta > * { margin-right: 10px; }\n" +
+                ".ua-comment-meta > *:last-child { margin-right: 0; }\n" +
+                
+                ".ua-chip { background: rgba(0,0,0,0.3); padding: 5px 12px; border-radius: 8px; font-size: 0.85em; color: #ccc; display: flex; align-items: center; flex-shrink: 0; max-width: 100%; box-sizing: border-box; }\n" +
+                ".ua-chip.author { color: #fff; font-weight: bold; background: rgba(255,255,255,0.08); flex-shrink: 1; min-width: 0; }\n" +
+                ".ua-source-icon { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; margin-right: 8px; }\n" +
+                ".author-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; flex-shrink: 1; min-width: 0; }\n" +
+                
+                ".ua-comment-text { font-size: var(--uacom-fsize, 1.15em); line-height: 1.5; color: #ddd; display: -webkit-box; -webkit-line-clamp: var(--uacom-lines, 3); -webkit-box-orient: vertical; overflow: hidden; margin-bottom: auto; padding-bottom: 2px; }\n" +
+                ".ua-comment-footer { margin-top: 10px; display: flex; justify-content: flex-end; min-height: 24px; }\n" +
+                ".ua-chip.read-more { background: rgba(255,255,255,0.1); font-size: 0.8em; align-items: center; transition: all 0.2s; }\n" +
+                
+                "@keyframes uacomAppear{0%{opacity:0;transform:translateY(30px)}100%{opacity:1;transform:translateY(0)}}\n" +
+                
+                ".uacom-overlay { position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; transition:opacity 0.3s; }\n" +
+                ".uacom-modal { width:var(--uacom-noty-width, 800px); max-width:96vw; height:85vh; max-height:920px; background:#1a222c; border:1px solid rgba(255,255,255,0.1); border-radius:16px; box-shadow:0 14px 36px rgba(0,0,0,0.8); display:flex; flex-direction:column; overflow:hidden; animation:uacomAppear 0.4s ease-out; }\n" +
+                
+                "@supports (backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px)) { \n" +
+                    ".uacom-overlay { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); } \n" +
+                    ".uacom-modal { background: rgba(22, 30, 38, 0.55); backdrop-filter: blur(24px) saturate(145%); -webkit-backdrop-filter: blur(24px) saturate(145%); border-radius: 30px; } \n" +
+                    ".ua-comment-card { background: rgba(22, 30, 38, 0.4); backdrop-filter: blur(15px) saturate(130%); -webkit-backdrop-filter: blur(15px) saturate(130%); } \n" +
+                    ".ua-comment-card.focus { background: rgba(255, 255, 255, 0.1); } \n" +
+                "}\n" +
+                
+                ".uacom-head { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; background:rgba(17, 23, 29, 0.98); border-top:1px solid rgba(255,255,255,0.06); box-sizing: border-box; }\n" +
+                ".uacom-leftside { display:flex; align-items:center; min-width:0; flex:1; }\n" +
+                ".uacom-rightside { display:flex; align-items:center; flex-shrink:0; }\n" +
+                ".uacom-leftside .uacom-arrow { margin-right:12px; }\n" +
+                ".uacom-rightside .uacom-counter { margin-right:15px; }\n" +
+                ".uacom-rightside .uacom-arrow { margin-right:12px; }\n" +
+                
+                ".uacom-arrow { width:42px; height:42px; border-radius:14px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.08); color:#8c8f9a; cursor:pointer; transition:all 0.25s; border:1px solid rgba(255,255,255,0.1); font-size:1.2em; }\n" +
+                ".uacom-arrow.active { color:#fff; border-color:rgba(255,255,255,0.22); background:rgba(255,255,255,0.12); }\n" +
+                ".uacom-arrow.active:hover { transform:scale(1.04); }\n" +
+                ".uacom-meta { min-width:0; overflow:hidden; flex:1; }\n" +
+                ".uacom-title { font-size:0.85em; color:#d8deef; opacity:0.9; display:flex; align-items:center; }\n" +
+                ".uacom-author { font-size:1.15em; font-weight:bold; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }\n" +
+                ".uacom-counter { font-weight:bold; color:#dbe0eb; opacity:0.75; min-width:5ch; text-align:right; font-size:1.1em; }\n" +
+                ".uacom-close { width:42px; height:42px; border-radius:14px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.1); color:#fff; cursor:pointer; transition:all 0.3s; border:1px solid rgba(255,255,255,0.14); font-size:1.2em; }\n" +
+                ".uacom-close:hover { background:rgba(255,255,255,0.2); transform:scale(1.02); }\n" +
+                ".uacom-close.focus, .uacom-close:active { transform:scale(0.97); background:rgba(255,255,255,0.26); border-color:#fff; box-shadow:0 0 15px rgba(255,255,255,0.4); outline:none; }\n" +
+                ".uacom-body { padding:28px 24px; overflow-y:auto; font-size:var(--uacom-noty-fsize, 1.3em); line-height:1.6; color:rgba(255,255,255,0.95); white-space:pre-wrap; flex:1; }\n" +
+                ".uacom-body::-webkit-scrollbar { width:8px; display:block; }\n" +
+                ".uacom-body::-webkit-scrollbar-track { background:rgba(255,255,255,0.05); border-radius:10px; }\n" +
+                ".uacom-body::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.2); border-radius:10px; }\n" +
+                ".uacom-body::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.4); }\n" +
+                ".uacom-swipe-handle { display: none; height: 24px; flex: 0 0 24px; align-items: center; justify-content: center; touch-action: none; }\n" +
+                ".uacom-swipe-handle span { display: block; width: 44px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.28); }\n" +
+                
+                "@media (orientation: portrait), (max-width: 768px) { \n" +
+                    ".ua-comment-card { flex: 0 0 85vw !important; width: 85vw !important; }\n" +
+                    ".uacom-modal { width: 100vw; height: 92vh; border-radius: 26px; } \n" +
+                    ".uacom-swipe-handle { display: flex; } \n" +
+                    ".uacom-overlay { align-items: flex-end; padding: 8px; }\n" +
+                "}\n";
+            document.head.appendChild(style);
+
+            if (window.Lampa && window.Lampa.Listener) {
+                window.Lampa.Listener.follow('full', function(e) {
+                    try {
+                        if (e.type === 'complite') { _this.destroy(); _this.fetch(e.data.movie); }
+                        else if (e.type === 'destroy') { _this.destroy(); }
+                    } catch(err) {
+                        console.error('UaComentsY Listener Error:', err);
+                    }
+                });
+            }
+        };
+
+        this.refreshScroll = function() {
+            var mainScroll = $('.scroll').data('iscroll');
+            if (mainScroll) mainScroll.refresh();
+        };
+
+        this.destroy = function() {
+            UaCommentViewer.close();
+            fetchedComments =[];
+            isSearchFinished = false;
+            currentStatus = '';
+            if (observer) { observer.disconnect(); observer = null; }
+            $('.ua-comments-root').remove();
+        };
+
+        this.fallbackFetchBackend = function(movie, failedSources, callback) {
+            var imdb = movie.imdb_id || '';
+            var title = movie.title || movie.name || '';
+            var original = movie.original_title || movie.original_name || '';
+            var yearStr = movie.release_date || movie.first_air_date || '';
+            var yearMatch = yearStr.match(/^(\d{4})/);
+            var year = yearMatch ? yearMatch[1] : '';
+
+            if (!failedSources || failedSources.length === 0) {
+                callback([]);
+                return;
+            }
+
+            var requests = [];
+            var sourcesCopy = failedSources.slice();
+
+            // 1. РћРєСЂРµРјРёР№ Р·Р°РїРёС‚ РґР»СЏ UaKino (С‚С–Р»СЊРєРё imdb_id)
+            var uakinoIndex = sourcesCopy.indexOf('uakino');
+            if (uakinoIndex !== -1) {
+                if (imdb) {
+                    var uakinoParams = [];
+                    uakinoParams.push('imdb_id=' + encodeURIComponent(imdb));
+                    uakinoParams.push('sources=uakino');
+                    requests.push('http://lampaua.mooo.com/lite/uacomments/fetch?' + uakinoParams.join('&'));
+                }
+                sourcesCopy.splice(uakinoIndex, 1);
+            }
+
+            // 2. РЎРїС–Р»СЊРЅРёР№ Р·Р°РїРёС‚ РґР»СЏ РІСЃС–С… С–РЅС€РёС… РґР¶РµСЂРµР»
+            if (sourcesCopy.length > 0) {
+                var otherParams = [];
+                if (imdb) otherParams.push('imdb_id=' + encodeURIComponent(imdb));
+                if (title) otherParams.push('title=' + encodeURIComponent(title));
+                if (original && original.toLowerCase() !== title.toLowerCase()) otherParams.push('original_title=' + encodeURIComponent(original));
+                if (year) otherParams.push('year=' + encodeURIComponent(year));
+                otherParams.push('sources=' + encodeURIComponent(sourcesCopy.join(',')));
+                
+                requests.push('http://lampaua.mooo.com/lite/uacomments/fetch?' + otherParams.join('&'));
+            }
+
+            if (requests.length === 0) {
+                callback([]);
+                return;
+            }
+
+            var allFallbackComments = [];
+            var completed = 0;
+
+            for (var i = 0; i < requests.length; i++) {
+                $.ajax({
+                    url: requests[i],
+                    method: 'GET',
+                    dataType: 'json',
+                    timeout: 15000,
+                    success: function(list) {
+                        if (Array.isArray(list)) {
+                            allFallbackComments = allFallbackComments.concat(list);
+                        }
+                    },
+                    error: function() {},
+                    complete: function() {
+                        completed++;
+                        if (completed === requests.length) {
+                            callback(allFallbackComments);
+                        }
+                    }
+                });
+            }
+        };
+        
+        this.fetch = function(movie) {
+            var _this = this;
+            try {
+                var imdbId = movie.imdb_id || (movie.external_ids ? movie.external_ids.imdb_id : '') || '';
+
+                var useUaKino = getTriggerSafe('uacom_src_uakino', false);
+                var useUaFlix = getTriggerSafe('uacom_src_uaflix', true);
+                var useUaSerials = getTriggerSafe('uacom_src_uaserials', true);
+                var useKinoBaza = getTriggerSafe('uacom_src_kinobaza', true);
+                var useKinoStrain = getTriggerSafe('uacom_src_kinostrain', true);
+                
+                var totalSources = 0;
+                if (useUaKino) totalSources++;
+                if (useUaFlix) totalSources++;
+                if (useUaSerials) totalSources++;
+                if (useKinoBaza) totalSources++;
+                if (useKinoStrain) totalSources++;
+
+                if (totalSources === 0) {
+                    currentStatus = 'Р’СЃС– РґР¶РµСЂРµР»Р° РІРёРјРєРЅРµРЅС– РІ РЅР°Р»Р°С€С‚СѓРІР°РЅРЅСЏС…';
+                    isSearchFinished = true;
+                    _this.inject();
+                    return;
+                }
+
+                var releaseDateStr = movie.release_date || movie.first_air_date || '';
+                if (!releaseDateStr) {
+                    currentStatus = 'Р С–Рє РІРёС…РѕРґСѓ РЅРµ РІРєР°Р·Р°РЅРѕ, РїРѕС€СѓРє РєРѕРјРµРЅС‚Р°СЂС–РІ РЅРµРјРѕР¶Р»РёРІРёР№.';
+                    isSearchFinished = true;
+                    _this.inject();
+                    return;
+                }
+
+                var releaseDate = new Date(releaseDateStr);
+                var today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                if (releaseDate > today) {
+                    currentStatus = 'Р РµР»С–Р· С‰Рµ РЅРµ РІС–РґР±СѓРІСЃСЏ, РєРѕРјРµРЅС‚Р°СЂС–РІ РїРѕРєРё С‰Рѕ РЅРµРјР°С”.';
+                    isSearchFinished = true;
+                    _this.inject();
+                    return;
+                }
+
+                var data = { ua: [], fl:[], us:[], kb:[], ks:[] };
+                var done = 0;
+                var activeSources = [];
+
+                var updateStatusUI = function() {
+                    if (isSearchFinished) return;
+                    if (activeSources.length > 0) {
+                        currentStatus = 'РЁСѓРєР°С”РјРѕ РЅР°: ' + activeSources.join(', ');
+                    } else {
+                        currentStatus = 'РћР±СЂРѕР±РєР°...';
+                    }
+                    _this.inject();
+                };
+
+                var addSourceUI = function(name) {
+                    if (activeSources.indexOf(name) === -1) {
+                        activeSources.push(name);
+                        updateStatusUI();
+                    }
+                };
+
+                var removeSourceUI = function(name) {
+                    var idx = activeSources.indexOf(name);
+                    if (idx !== -1) {
+                        activeSources.splice(idx, 1);
+                        updateStatusUI();
+                    }
+                };
+                
+                isSearchFinished = false;
+                _this.startObserver(); 
+                
+                var finalizeFetch = function(finalList) {
+                    fetchedComments = finalList;
+                    isSearchFinished = true;
+                    if (finalList.length === 0) currentStatus = 'РљРѕРјРµРЅС‚Р°СЂС– РЅРµ Р·РЅР°Р№РґРµРЅРѕ';
+                    _this.inject(); 
+                };
+
+                var finish = function() {
+                    done++;
+                    if (done >= totalSources) {
+                        var failedSources = [];
+                        if (useUaKino && data.ua.length === 0) failedSources.push('uakino');
+                        if (useUaFlix && data.fl.length === 0) failedSources.push('uaflix');
+                        if (useUaSerials && data.us.length === 0) failedSources.push('uaserials');
+                        if (useKinoBaza && data.kb.length === 0) failedSources.push('kinobaza');
+
+                        var processAndFinalize = function() {
+                            var all = [];
+                            var kbReviews = data.kb.filter(function(c) { return c.isReview; });
+                            var kbComments = data.kb.filter(function(c) { return !c.isReview; });
+                            
+                            all = all.concat(kbReviews);
+                            
+                            var max = Math.max(data.ua.length, data.fl.length, data.us.length, kbComments.length, data.ks.length);
+                            for (var i = 0; i < max; i++) {
+                                if (data.ua[i]) all.push(data.ua[i]);
+                                if (data.fl[i]) all.push(data.fl[i]);
+                                if (data.us[i]) all.push(data.us[i]);
+                                if (kbComments[i]) all.push(kbComments[i]);
+                                if (data.ks[i]) all.push(data.ks[i]);
+                            }
+                            
+                            finalizeFetch(all);
+                        };
+
+                        if (failedSources.length > 0) {
+                            var hasAny = (data.ua.length + data.fl.length + data.us.length + data.kb.length + data.ks.length) > 0;
+                            var statusText = hasAny 
+                                ? 'Р”РѕРІР°РЅС‚Р°Р¶СѓС”РјРѕ РєРѕРјРµРЅС‚Р°СЂС– (' + failedSources.join(', ') + ')...' 
+                                : 'РЁСѓРєР°С”РјРѕ С‡РµСЂРµР· СЂРµР·РµСЂРІРЅРёР№ СЃРµСЂРІРµСЂ...';
+                            currentStatus = statusText;
+                            _this.inject();
+                            
+                            _this.fallbackFetchBackend(movie, failedSources, function(fallbackComments) {
+                                fallbackComments.forEach(function(c) {
+                                    if (c.source === 'UaKino') data.ua.push(c);
+                                    else if (c.source === 'UAFlix') data.fl.push(c);
+                                    else if (c.source === 'UASerials') data.us.push(c);
+                                    else if (c.source === 'KinoBaza') data.kb.push(c);
+                                    else if (c.source === 'KinoStrain') data.ks.push(c);
+                                });
+                                processAndFinalize();
+                            });
+                        } else {
+                            processAndFinalize();
+                        }
+                    }
+                };
+
+                // --- UaKino ---
+                if (useUaKino) {
+                    addSourceUI('UaKino');
+                    var finishUak = function(comments) {
+                        data.ua = comments || [];
+                        removeSourceUI('UaKino');
+                        finish();
+                    };
+
+                    if (imdbId) {
+                        var uakinoSearchUrl = 'https://uakino.best/index.php?do=search&subaction=search&from_page=0&story=' + encodeURIComponent(imdbId);
+                        
+                        network.req(uakinoSearchUrl, function(html) {
+                            try {
+                                var doc = parseHTML(html);
+                                
+                                if (doc.find('.comments').length > 0 || doc.find('#dle-comments-list').length > 0) {
+                                    return finishUak(parser.parse(html, 'UaKino', '.comments, #dle-comments-list'));
+                                }
+                                
+                                var linkEl = doc.find('div.movie-item, .shortstory').first().find('a.movie-title, a.full-movie, .poster > a').first();
+                                if (!linkEl.length) linkEl = doc.find('div.movie-item, .shortstory').first().find('a[href]').first();
+                                var href = linkEl.attr('href');
+                                
+                                if (href) {
+                                    if (href.indexOf('http') !== 0) href = 'https://uakino.best' + (href.indexOf('/') === 0 ? '' : '/') + href;
+                                    
+                                    network.req(href, function(pageHtml) {
+                                        try { finishUak(parser.parse(pageHtml, 'UaKino', '.comments, #dle-comments-list')); } 
+                                        catch(e) { finishUak([]); }
+                                    }, function() { finishUak([]); });
+                                } else { finishUak([]); }
+                            } catch(err) { finishUak([]); }
+                        }, function() { finishUak([]); });
+                    } else { finishUak([]); }
+                }
+
+                // --- UAFlix ---
+                if (useUaFlix) {
+                    addSourceUI('UAFlix');
+                    var flixCompleted = false;
+                    var flixTimeout = setTimeout(function() { 
+                        if (!flixCompleted) { 
+                            flixCompleted = true; data.fl = []; removeSourceUI('UAFlix'); finish(); 
+                        } 
+                    }, 15000); 
+
+                    var finishFlix = function(comments) {
+                        if (!flixCompleted) {
+                            clearTimeout(flixTimeout);
+                            flixCompleted = true;
+                            data.fl = comments || [];
+                            removeSourceUI('UAFlix');
+                            finish();
+                        }
+                    };
+
+                    var flixTitleEng = movie.original_title || movie.original_name || movie.title || movie.name || '';
+                    var flixYearStr = movie.release_date || movie.first_air_date || '';
+                    var flixYearMatch = flixYearStr.match(/^(\d{4})/);
+                    var flixExpectedYear = flixYearMatch ? parseInt(flixYearMatch[1], 10) : 0;
+                    var isTvFlix = movie.type === 'tv' || typeof movie.first_air_date !== 'undefined' || (movie.name && !movie.title);
+                    var expectedTypeFlix = isTvFlix ? 'series' : 'movie';
+
+                    if (!flixTitleEng || !flixExpectedYear) {
+                        finishFlix([]);
+                    } else {
+                        var searchUrlFlix = 'https://bbe.lme.isroot.in/api/v2/search?sources=uaflix&source=uaflix&title=' + encodeURIComponent(flixTitleEng) + '&year=' + flixExpectedYear;
+                        
+                        network.req(searchUrlFlix, function(resStr) {
+                            if (flixCompleted) return;
+                            try {
+                                var json = JSON.parse(resStr);
+                                var items = [];
+                                
+                                if (Array.isArray(json)) items = json;
+                                else if (json.items && Array.isArray(json.items)) items = json.items;
+                                else if (json.data && Array.isArray(json.data)) items = json.data;
+                                else if (json.results && Array.isArray(json.results)) items = json.results;
+                                else if (json.movies && Array.isArray(json.movies)) items = json.movies;
+                                
+                                var targetHref = null;
+                                var searchEn = (movie.original_title || movie.original_name || '').toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+                                var searchUa = (movie.title || movie.name || '').toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+                                
+                                for (var i = 0; i < items.length; i++) {
+                                    var item = items[i];
+                                    if (item.type === expectedTypeFlix) {
+                                        var itemTitles = (item.title || '').split('/');
+                                        var matchTitle = false;
+                                        for (var j = 0; j < itemTitles.length; j++) {
+                                            var tClean = itemTitles[j].trim().toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+                                            if (tClean) {
+                                                if (searchEn && (tClean === searchEn || tClean.indexOf(searchEn) !== -1 || searchEn.indexOf(tClean) !== -1)) matchTitle = true;
+                                                if (searchUa && (tClean === searchUa || tClean.indexOf(searchUa) !== -1 || searchUa.indexOf(tClean) !== -1)) matchTitle = true;
+                                            }
+                                        }
+                                        
+                                        var itemHref = item.href || (item.ref ? item.ref.href : null);
+                                        
+                                        if (matchTitle && itemHref) {
+                                            targetHref = itemHref;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (targetHref) {
+                                    network.req(targetHref, function(pageHtml) {
+                                        if (flixCompleted) return;
+                                        finishFlix(parser.parse(pageHtml, 'UAFlix', '#dle-comments-list, .comments'));
+                                    }, function() { finishFlix([]); });
+                                } else { finishFlix([]); }
+                            } catch(e) { finishFlix([]); }
+                        }, function() { finishFlix([]); });
+                    }
+                }
+
+                // --- UASerials (Р· РґРѕРґР°С‚РєРѕРІРёРј РґР·РµСЂРєР°Р»РѕРј) ---
+                if (useUaSerials) {
+                    addSourceUI('UASerials');
+                    var usCompleted = false;
+                    var usTimeout = setTimeout(function() { 
+                        if (!usCompleted) { 
+                            usCompleted = true; data.us = []; removeSourceUI('UASerials'); finish(); 
+                        } 
+                    }, 25000); 
+
+                    var data_us_main = [];
+                    var data_us_my = [];
+                    var usMainDone = false;
+                    var usMyDone = false;
+
+                    var checkUsComplete = function() {
+                        if (usMainDone && usMyDone) {
+                            if (!usCompleted) {
+                                clearTimeout(usTimeout);
+                                usCompleted = true;
+                                var allUs = data_us_main.concat(data_us_my);
+                                var uniqueUs = [];
+                                var signs = [];
+                                for(var i=0; i<allUs.length; i++) {
+                                    var sign = allUs[i].author + '|' + allUs[i].text.substring(0, 30);
+                                    if(signs.indexOf(sign) === -1) {
+                                        signs.push(sign);
+                                        uniqueUs.push(allUs[i]);
+                                    }
+                                }
+                                data.us = uniqueUs;
+                                removeSourceUI('UASerials');
+                                finish();
+                            }
+                        }
+                    };
+
+                    var parseDleAjaxComments = function(htmlStr) {
+                        var list = [];
+                        try {
+                            if (!htmlStr || typeof htmlStr !== 'string') return list;
+                            var doc = parseHTML('<div>' + htmlStr + '</div>');
+                            var items = doc.find('div[id^="comment-id-"]');
+                            if (!items.length) items = doc.find('.comment, .comm-item, .comments-tree-item, .comments-item');
+
+                            items.each(function() {
+                                var el = $(this);
+                                var authorEl = el.find('.com-author, h3, b, .name, [itemprop="name"], .author, .comment-author').first();
+                                var author = authorEl.text().trim() || 'Р“Р»СЏРґР°С‡';
+                                author = author.replace(/^Р“С–СЃС‚СЊ\s+/i, '').trim(); 
+
+                                var textEl = el.find('div[id^="comm-id-"]').first().clone();
+                                if(!textEl.length) textEl = el.find('.text, .comm-text, .comment-content, .comment-text, .com-text').first().clone();
+                                if(!textEl.length) textEl = el.clone(); 
+                                
+                                textEl.find('br').replaceWith('\n');
+                                textEl.find('p').each(function(){ $(this).append('\n'); });
+                                textEl.find('script, style, iframe').remove();
+                                textEl.find('.com-author, .com-date, .reply, .rate, .rating, [class*="date"], [class*="reply"], [class*="action"], [class*="meta"], [class*="group"], [class*="avatar"]').remove();
+                                
+                                var rawText = textEl.text();
+                                var lines = rawText.split('\n');
+                                var cleanLines = [];
+                                
+                                for(var i=0; i<lines.length; i++) {
+                                    var l = lines[i].trim();
+                                    if(!l) continue;
+                                    if(l.match(/^\d{1,2}\s+(СЃС–С‡РЅСЏ|Р»СЋС‚РѕРіРѕ|Р±РµСЂРµР·РЅСЏ|РєРІС–С‚РЅСЏ|С‚СЂР°РІРЅСЏ|С‡РµСЂРІРЅСЏ|Р»РёРїРЅСЏ|СЃРµСЂРїРЅСЏ|РІРµСЂРµСЃРЅСЏ|Р¶РѕРІС‚РЅСЏ|Р»РёСЃС‚РѕРїР°РґР°|РіСЂСѓРґРЅСЏ)\s+\d{4}\s+\d{2}:\d{2}$/i)) continue;
+                                    if(l.match(/^(РЈС‡РѕСЂР°|РЎСЊРѕРіРѕРґРЅС–)\s+(Сѓ|РІ)\s+\d{2}:\d{2}$/i)) continue;
+                                    if(l.match(/^Р’С–РґРїРѕРІС–СЃС‚Рё$/i)) continue;
+                                    if(l.match(/^РќРѕРІР°С‡РѕРє$/i)) continue;
+                                    if(l.match(/^Р“С–СЃС‚СЊ$/i)) continue;
+                                    if(l === author) continue; 
+                                    
+                                    cleanLines.push(l);
+                                }
+                                
+                                var finalTxt = cleanLines.join('\n').trim();
+                                if (finalTxt && finalTxt.length > 2) {
+                                    list.push({ author: author, source: 'UASerials', text: finalTxt });
+                                }
+                            });
+                        } catch(e){}
+                        return list;
+                    };
+
+                    // 1. UASerials.com
+                    var usSearchTitle = movie.original_title || movie.original_name || movie.title || movie.name;
+                    if (!usSearchTitle) {
+                        usMainDone = true; checkUsComplete();
+                    } else {
+                        var cleanTitle = usSearchTitle.trim().replace(/\s+/g, '+').toLowerCase();
+                        var searchUrl = 'https://uaserials.com/search/' + encodeURI(cleanTitle) + '/';
+
+                        network.req(searchUrl, function(html) {
+                            if (usMainDone || usCompleted) return;
+                            var doc = parseHTML(html);
+                            var links = [];
+                            doc.find('a[href]').each(function() {
+                                var href = $(this).attr('href');
+                                if (href && href.match(/\/\d+-[^/]+\.html$/)) {
+                                    var fullUrl = href.indexOf('http') === 0 ? href : 'https://uaserials.com' + href;
+                                    if (links.indexOf(fullUrl) === -1) links.push(fullUrl);
+                                }
+                            });
+                            links = links.slice(0, 10);
+                            
+                            if (links.length === 0) { usMainDone = true; checkUsComplete(); return; }
+
+                            var lIdx = 0;
+                            var checkUsLink = function() {
+                                if (lIdx >= links.length) { usMainDone = true; checkUsComplete(); return; }
+                                var targetUrl = links[lIdx];
+                                lIdx++;
+
+                                network.req(targetUrl, function(pageHtml) {
+                                    if (usMainDone || usCompleted) return;
+                                    var matchFound = false;
+                                    if (imdbId) {
+                                        var match = pageHtml.match(/tt\d{7,10}/);
+                                        if (match && match[0] === imdbId) matchFound = true;
+                                    } else { matchFound = true; }
+
+                                    if (matchFound) {
+                                        var newsIdMatch = targetUrl.match(/\/(\d+)-[^/]+\.html$/);
+                                        if (newsIdMatch) {
+                                            var newsId = newsIdMatch[1];
+                                            var fetchMainAjaxComments = function(cstart, aggregated) {
+                                                if (usCompleted) return;
+                                                var ajaxUrl = 'https://uaserials.com/engine/ajax/comments.php?cstart=' + cstart + '&news_id=' + newsId + '&skin=uaserials2020&massact=disable';
+                                                
+                                                network.req(ajaxUrl, function(resJSON) {
+                                                    try {
+                                                        var htmlStr = resJSON;
+                                                        try { var json = JSON.parse(resJSON); if (json.comments !== undefined) htmlStr = json.comments; } catch(e) {}
+                                                        
+                                                        if (htmlStr && htmlStr.trim().length > 10) {
+                                                            var parsed = parseDleAjaxComments(htmlStr);
+                                                            if (parsed.length > 0) fetchMainAjaxComments(cstart + 1, aggregated.concat(parsed));
+                                                            else { data_us_main = aggregated; usMainDone = true; checkUsComplete(); }
+                                                        } else { data_us_main = aggregated; usMainDone = true; checkUsComplete(); }
+                                                    } catch(e) { data_us_main = aggregated; usMainDone = true; checkUsComplete(); }
+                                                }, function() { data_us_main = aggregated; usMainDone = true; checkUsComplete(); });
+                                            };
+                                            fetchMainAjaxComments(1, []);
+                                        } else { checkUsLink(); }
+                                    } else { checkUsLink(); }
+                                }, function() { checkUsLink(); });
+                            };
+                            checkUsLink();
+                        }, function() { usMainDone = true; checkUsComplete(); });
+                    }
+
+                    // 2. UASerials.my
+                    var usMySearchTitle = movie.original_title || movie.original_name;
+                    if (!usMySearchTitle) {
+                        usMyDone = true; checkUsComplete();
+                    } else {
+                        var searchUrlMy = 'https://uaserials.my/index.php?do=search&subaction=search&search_start=0&full_search=0&story=' + encodeURIComponent(usMySearchTitle);
+                        
+                        network.req(searchUrlMy, function(htmlMy) {
+                            if (usMyDone || usCompleted) return;
+                            var docMy = parseHTML(htmlMy);
+                            var linksMy = [];
+                            
+                            docMy.find('a[href]').each(function() {
+                                var href = $(this).attr('href');
+                                if (href && href.match(/\/\d+-[^/]+\.html$/)) {
+                                    var fullUrl = href.indexOf('http') === 0 ? href : 'https://uaserials.my' + href;
+                                    if (linksMy.indexOf(fullUrl) === -1) linksMy.push(fullUrl);
+                                }
+                            });
+
+                            if (linksMy.length === 0) { usMyDone = true; checkUsComplete(); return; }
+
+                            var lIdxMy = 0;
+                            var checkUsMyLink = function() {
+                                if (lIdxMy >= linksMy.length) { usMyDone = true; checkUsComplete(); return; }
+                                var targetUrlMy = linksMy[lIdxMy];
+                                lIdxMy++;
+                                
+                                network.req(targetUrlMy, function(pageHtmlMy) {
+                                    if (usMyDone || usCompleted) return;
+                                    var matchFound = false;
+                                    if (imdbId) {
+                                        var match = pageHtmlMy.match(/tt\d{7,10}/);
+                                        if (match && match[0] === imdbId) matchFound = true;
+                                    } else { matchFound = true; }
+
+                                    if (matchFound) {
+                                        var newsIdMatch = targetUrlMy.match(/\/(\d+)-[^/]+\.html$/);
+                                        if (newsIdMatch) {
+                                            var newsId = newsIdMatch[1];
+                                            var fetchAjaxComments = function(cstart, aggregated) {
+                                                if (usCompleted) return;
+                                                var ajaxUrl = 'https://uaserials.my/engine/ajax/controller.php?mod=comments&cstart=' + cstart + '&news_id=' + newsId;
+                                                
+                                                network.req(ajaxUrl, function(resJSON) {
+                                                    try {
+                                                        var htmlStr = resJSON;
+                                                        try { var json = JSON.parse(resJSON); if (json.comments !== undefined) htmlStr = json.comments; } catch(e) {}
+                                                        if (htmlStr && htmlStr.trim().length > 10) {
+                                                            var parsed = parseDleAjaxComments(htmlStr);
+                                                            if (parsed.length > 0) fetchAjaxComments(cstart + 1, aggregated.concat(parsed));
+                                                            else { data_us_my = aggregated; usMyDone = true; checkUsComplete(); }
+                                                        } else { data_us_my = aggregated; usMyDone = true; checkUsComplete(); }
+                                                    } catch(e) { data_us_my = aggregated; usMyDone = true; checkUsComplete(); }
+                                                }, function() { data_us_my = aggregated; usMyDone = true; checkUsComplete(); });
+                                            };
+                                            fetchAjaxComments(1, []);
+                                        } else { checkUsMyLink(); }
+                                    } else { checkUsMyLink(); }
+                                }, function() { checkUsMyLink(); });
+                            };
+                            checkUsMyLink();
+                        }, function() { usMyDone = true; checkUsComplete(); });
+                    }
+                }
+
+                // --- KinoBaza ---
+                if (useKinoBaza) {
+                    addSourceUI('KinoBaza');
+                    var kbCompleted = false;
+                    var kbTimeout = setTimeout(function() { 
+                        if (!kbCompleted) { 
+                            kbCompleted = true; data.kb = []; removeSourceUI('KinoBaza'); finish(); 
+                        } 
+                    }, 20000); 
+
+                    var finishKb = function(comments) {
+                        if (!kbCompleted) {
+                            clearTimeout(kbTimeout);
+                            kbCompleted = true;
+                            data.kb = comments || [];
+                            removeSourceUI('KinoBaza');
+                            finish();
+                        }
+                    };
+                    
+                    var processKb = function(pageHtml) {
+                        var kbList =[];
+                        try {
+                            var pageDoc = parseHTML(pageHtml);
+                            var cleanText = function(str) { return str.replace(/[^\S\r\n]+/g, ' ').replace(/\n\s*\n\s*\n+/g, '\n\n').trim(); };
+
+                            pageDoc.find('div[id^="review_container_"],[itemprop="review"]').each(function() {
+                                try {
+                                    var el = $(this);
+                                    var authorEl = el.find('[itemprop="name"]').first();
+                                    if (!authorEl.length) authorEl = el.find('a.text-reset.fw-bold[href*="/@"], a[href*="/user"], b, strong').first();
+                                    var author = authorEl.text().trim() || 'РљСЂРёС‚РёРє';
+                                    
+                                    var bodyEl = el.find('[itemprop="reviewBody"]').first();
+                                    if (!bodyEl.length) bodyEl = el.find('.content, .review-text').first(); 
+                                    
+                                    if (bodyEl.length) {
+                                        var cloneBody = bodyEl.clone();
+                                        cloneBody.find('br').replaceWith('\n');
+                                        cloneBody.find('p').each(function() { $(this).append('\n\n'); });
+                                        cloneBody.find('script, style, iframe, a, button, svg, path').remove();
+                                        cloneBody.find('[datetime], time,[class*="date"], [class*="time"],[class*="meta"],[class*="action"],[class*="reply"]').remove();
+                                        
+                                        var text = cleanText(cloneBody.text());
+                                        text = text.replace(/(?:\s*(?:С‡РёС‚Р°С‚Рё РґР°Р»С–|РїРѕРєР°Р·Р°С‚Рё РїРѕРІРЅС–СЃС‚СЋ|С‡РёС‚Р°С‚СЊ РґР°Р»РµРµ|РїРѕРєР°Р·Р°С‚СЊ РїРѕРІРЅС–СЃС‚СЋ|read more|вЂ¦|\.\.\.|\.\.))\s*$/ig, '');
+                                        
+                                        if (text.toLowerCase().indexOf(author.toLowerCase()) === 0) {
+                                            text = text.substring(author.length).replace(/^[\s,:\-]+/, '').trim();
+                                        }
+
+                                        if (text && text.length > 5) kbList.push({ author: author, source: 'KinoBaza', text: text, isReview: true });
+                                    }
+                                } catch(e){}
+                            });
+                            
+                            pageDoc.find('div[id^="comment_"]').each(function() {
+                                try {
+                                    var el = $(this);
+                                    var authorEl = el.find('a.text-reset.fw-bold').first();
+                                    if (!authorEl.length) authorEl = el.find('a[href*="/@"], .name, b, strong').first();
+                                    var author = authorEl.text().trim() || 'Р“Р»СЏРґР°С‡';
+                                    
+                                    var bodyEl = el.find('.js-comment-body').first();
+                                    if (!bodyEl.length) bodyEl = el.find('.comment-text, .content').first(); 
+                                    
+                                    if (bodyEl.length) {
+                                        var cloneBody = bodyEl.clone();
+                                        cloneBody.find('br').replaceWith('\n');
+                                        cloneBody.find('p').each(function() { $(this).append('\n'); });
+                                        cloneBody.find('script, style, iframe, a, button, svg, path').remove();
+                                        cloneBody.find('[datetime], time, [class*="date"],[class*="time"],[class*="meta"],[class*="action"],[class*="reply"]').remove();
+                                        
+                                        var text = cleanText(cloneBody.text());
+                                        text = text.replace(/(?:\s*(?:С‡РёС‚Р°С‚Рё РґР°Р»С–|РїРѕРєР°Р·Р°С‚Рё РїРѕРІРЅС–СЃС‚СЋ|С‡РёС‚Р°С‚СЊ РґР°Р»РµРµ|РїРѕРєР°Р·Р°С‚СЊ РїРѕРІРЅС–СЃС‚СЋ|read more|вЂ¦|\.\.\.|\.\.))\s*$/ig, '');
+                                        
+                                        if (text.toLowerCase().indexOf(author.toLowerCase()) === 0) {
+                                            text = text.substring(author.length).replace(/^[\s,:\-]+/, '').trim();
+                                        }
+
+                                        if (text && text.length > 5) kbList.push({ author: author, source: 'KinoBaza', text: text, isReview: false });
+                                    }
+                                } catch(e){}
+                            });
+                        } catch(e) { console.error('UaComentsY KB Error:', e); }
+                        return kbList;
+                    };
+
+                    var kbSearchTitle = movie.original_title || movie.original_name || movie.title || movie.name;
+
+                    if (!kbSearchTitle) {
+                        finishKb([]);
+                    } else {
+                        var isTv = movie.type === 'tv' || typeof movie.first_air_date !== 'undefined' || (movie.name && !movie.title);
+                        var expectedType = isTv ? 2 : 1;
+                        var yearStr = movie.release_date || movie.first_air_date || '';
+                        var yearMatch = yearStr.match(/^(\d{4})/);
+                        var expectedYearStr = yearMatch ? yearMatch[1] : '';
+
+                        var kbSearchUrl = 'https://kinobaza.com.ua/api/movies/search/?q=' + encodeURIComponent(kbSearchTitle);
+
+                        network.req(kbSearchUrl, function(responseStr) {
+                            if (kbCompleted) return;
+                            try {
+                                var items = [];
+                                var jsonRes = JSON.parse(responseStr);
+                                
+                                if (Array.isArray(jsonRes)) items = jsonRes;
+                                else if (jsonRes.data && Array.isArray(jsonRes.data)) items = jsonRes.data;
+                                else if (jsonRes.results && Array.isArray(jsonRes.results)) items = jsonRes.results;
+
+                                var bestMatchUrl = null;
+                                var searchEn = (movie.original_title || movie.original_name || '').toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+                                var searchUa = (movie.title || movie.name || '').toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+
+                                for (var i = 0; i < items.length; i++) {
+                                    var item = items[i];
+                                    if (item.type !== expectedType) continue;
+
+                                    var itemYearStr = item.year ? String(item.year) : '';
+                                    if (expectedYearStr && itemYearStr.indexOf(expectedYearStr) === -1) continue;
+
+                                    var nameEn = (item.name_en || item.name || '').toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+                                    var nameUa = (item.name_ua || '').toLowerCase().replace(/[^a-z0-9Р°-СЏС–С—С”Т‘]/gi, '');
+
+                                    var matchFound = false;
+                                    if (searchEn && nameEn && (searchEn === nameEn || nameEn.indexOf(searchEn) !== -1 || searchEn.indexOf(nameEn) !== -1)) matchFound = true;
+                                    if (searchUa && nameUa && (searchUa === nameUa || nameUa.indexOf(searchUa) !== -1 || searchUa.indexOf(nameUa) !== -1)) matchFound = true;
+                                    if (searchEn && nameUa && (searchEn === nameUa || nameUa.indexOf(searchEn) !== -1 || searchEn.indexOf(nameUa) !== -1)) matchFound = true;
+                                    if (searchUa && nameEn && (searchUa === nameEn || nameEn.indexOf(searchUa) !== -1 || searchUa.indexOf(nameEn) !== -1)) matchFound = true;
+
+                                    if (matchFound) {
+                                        if (item.slug) {
+                                            var slug = item.slug;
+                                            if (slug.indexOf('/') !== 0) slug = '/' + slug; 
+                                            bestMatchUrl = 'https://kinobaza.com.ua' + slug;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (bestMatchUrl) {
+                                    network.req(bestMatchUrl, function(pageHtml) {
+                                        if (kbCompleted) return;
+                                        finishKb(processKb(pageHtml));
+                                    }, function() { finishKb([]); });
+                                } else { finishKb([]); }
+                            } catch (e) { finishKb([]); }
+                        }, function() { finishKb([]); });
+                    }
+                }
+
+                // --- KinoStrain ---
+                if (useKinoStrain) {
+                    addSourceUI('KinoStrain');
+                    var ksCompleted = false;
+                    var ksTimeout = setTimeout(function() { 
+                        if (!ksCompleted) { 
+                            ksCompleted = true; data.ks = []; removeSourceUI('KinoStrain'); finish(); 
+                        } 
+                    }, 20000); 
+
+                    var finishKs = function(comments) {
+                        if (!ksCompleted) {
+                            clearTimeout(ksTimeout);
+                            ksCompleted = true;
+                            data.ks = comments || [];
+                            removeSourceUI('KinoStrain');
+                            finish();
+                        }
+                    };
+
+                    var ksTitleEng = movie.original_title || movie.original_name;
+                    if (!ksTitleEng) {
+                        finishKs([]);
+                    } else {
+                        var isTvKs = movie.type === 'tv' || typeof movie.first_air_date !== 'undefined' || (movie.name && !movie.title);
+                        var expectedFormatKs = isTvKs ? 'serial' : 'film';
+                        var yearStrKs = movie.release_date || movie.first_air_date || '';
+                        var yearMatchKs = yearStrKs.match(/^(\d{4})/);
+                        var expectedYearKs = yearMatchKs ? parseInt(yearMatchKs[1], 10) : 0;
+
+                        var ksSearchUrl = 'https://api.kinostrain.com/api/search?q=' + encodeURIComponent(ksTitleEng);
+
+                        network.req(ksSearchUrl, function(resSearch) {
+                            if (ksCompleted) return;
+                            try {
+                                var jsonSearch = JSON.parse(resSearch);
+                                var items = jsonSearch.data || [];
+                                var matchSlug = null;
+
+                                for (var i = 0; i < items.length; i++) {
+                                    var item = items[i];
+                                    if (item.format === expectedFormatKs && item.yearStart === expectedYearKs) {
+                                        matchSlug = item.slug;
+                                        break;
+                                    }
+                                }
+
+                                if (matchSlug) {
+                                    var ksContentUrl = 'https://api.kinostrain.com/api/content/' + matchSlug;
+                                    network.req(ksContentUrl, function(resContent) {
+                                        if (ksCompleted) return;
+                                        try {
+                                            var jsonContent = JSON.parse(resContent);
+                                            var contentId = jsonContent.data && jsonContent.data.id;
+                                            if (contentId) {
+                                                var ksCommentsUrl = 'https://api.kinostrain.com/api/content/' + contentId + '/comments';
+                                                network.req(ksCommentsUrl, function(resComments) {
+                                                    if (ksCompleted) return;
+                                                    try {
+                                                        var jsonComments = JSON.parse(resComments);
+                                                        var comms = jsonComments.data || [];
+                                                        var ksParsed = [];
+                                                        for (var c = 0; c < comms.length; c++) {
+                                                            var cItem = comms[c];
+                                                            var text = cItem.text ? cItem.text.trim() : '';
+                                                            var author = (cItem.user && cItem.user.nickname) ? cItem.user.nickname.trim() : 'Р“Р»СЏРґР°С‡';
+                                                            if (text) {
+                                                                ksParsed.push({ author: author, source: 'KinoStrain', text: text });
+                                                            }
+                                                        }
+                                                        finishKs(ksParsed);
+                                                    } catch(e) { finishKs([]); }
+                                                }, function() { finishKs([]); });
+                                            } else { finishKs([]); }
+                                        } catch(e) { finishKs([]); }
+                                    }, function() { finishKs([]); });
+                                } else { finishKs([]); }
+                            } catch(e) { finishKs([]); }
+                        }, function() { finishKs([]); });
+                    }
+                }
+
+            } catch (err) {
+                console.error('UaComentsY Main Fetch Error:', err);
+                currentStatus = 'РџРѕРјРёР»РєР° Р·Р°РІР°РЅС‚Р°Р¶РµРЅРЅСЏ';
+                isSearchFinished = true;
+                _this.inject();
+            }
+        };
+
+        this.startObserver = function() {
+            var _this = this;
+            _this.inject(); 
+            observer = new MutationObserver(function(mutations) {
+                var shouldInject = false;
+                for (var i = 0; i < mutations.length; i++) {
+                    if (mutations[i].addedNodes.length && $(mutations[i].target).closest('.ua-comments-root').length === 0) {
+                        shouldInject = true; break;
+                    }
+                }
+                if (shouldInject) _this.inject();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        };
+
+        this.inject = function() {
+            var _this = this;
+            try {
+                var focusedRemoved = false;
+                
+                $('.items-line').each(function() {
+                    var el = $(this);
+                    var title = el.find('.items-line__title').text().trim();
+                    var hasAddBtn = el.find('.full-review-add').length > 0;
+                    
+                    if (title === 'РљРѕРјРµРЅС‚Р°СЂС–' || hasAddBtn) {
+                        if (el.find('.focus').length > 0 || el.hasClass('focus')) focusedRemoved = true;
+                        el.remove();
+                    }
+                });
+
+                if ($('.ua-comments-slider').length && fetchedComments.length > 0) return;
+
+                var targetBlock = null;
+                $('.full-descr__details').each(function() {
+                    if ($(this).find('.full-descr__info, .full--budget, .full--countries').length > 0) targetBlock = $(this);
+                });
+                if (!targetBlock || !targetBlock.length) return; 
+
+                var root = $('.ua-comments-root');
+                if (!root.length) {
+                    root = $('<div class="ua-comments-root items-line"></div>');
+                    targetBlock.before(root);
+                }
+
+                if (!isSearchFinished || (isSearchFinished && fetchedComments.length === 0)) {
+                    var statusCard = root.find('.ua-status-card');
+                    if (!statusCard.length) {
+                        statusCard = $('<div class="ua-status-card selector"></div>');
+                        root.html(statusCard);
+                        _this.refreshScroll(); 
+                    }
+                    if (statusCard.text() !== currentStatus) statusCard.text(currentStatus);
+                    return;
+                }
+
+                if (isSearchFinished && fetchedComments.length > 0) {
+                    var currentFocus = $('.focus').last();
+
+                    root.empty(); 
+                    var slider = $('<div class="ua-comments-slider"></div>');
+
+                    slider.on('touchstart', function(e) {
+                        if (!e.originalEvent || !e.originalEvent.touches) return;
+                        $(this).data('touchStartX', e.originalEvent.touches[0].clientX);
+                        $(this).data('touchStartY', e.originalEvent.touches[0].clientY);
+                        $(this).data('isDragging', false);
+                    });
+
+                    slider.on('touchmove', function(e) {
+                        if (!e.originalEvent || !e.originalEvent.touches) return;
+                        var touchX = e.originalEvent.touches[0].clientX;
+                        var touchY = e.originalEvent.touches[0].clientY;
+                        var startX = $(this).data('touchStartX');
+                        var startY = $(this).data('touchStartY');
+                        
+                        var diffX = Math.abs(touchX - startX);
+                        var diffY = Math.abs(touchY - startY);
+                        
+                        if (diffX > 10 || diffY > 10) {
+                            $(this).data('isDragging', true);
+                        }
+                        if (diffX > diffY && diffX > 10) {
+                            e.stopPropagation();
+                        }
+                    });
+
+                    fetchedComments.forEach(function(comment, idx) {
+                        var item = new UaCommentItem(comment, fetchedComments, idx);
+                        slider.append(item.create().html);
+                    });
+
+                    root.append(slider);
+                    _this.refreshScroll(); 
+
+                    setTimeout(function() {
+                        slider.find('.ua-comment-card').each(function() {
+                            var cardEl = $(this);
+                            var textNode = cardEl.find('.ua-comment-text')[0];
+                            if (textNode && textNode.scrollHeight > textNode.clientHeight + 3) { 
+                                cardEl.find('.ua-chip.read-more').css('display', 'flex');
+                            }
+                        });
+                    }, 300);
+
+                    if (window.Lampa && window.Lampa.Controller) {
+                        if (focusedRemoved && slider.find('.ua-comment-card').length) {
+                            var firstCard = slider.find('.ua-comment-card').first()[0];
+                            if (firstCard) window.Lampa.Controller.focus(firstCard);
+                        } else if (currentFocus.length && currentFocus[0] !== document.body && $.contains(document.documentElement, currentFocus[0])) {
+                            window.Lampa.Controller.focus(currentFocus[0]);
+                        }
+                    }
+                }
+            } catch (err) { console.error('UaComentsY Inject Error:', err); }
+        };
+    }
+
+    function startPlugin() {
+        if (window.uacomentsy_plugin_started) return;
+        window.uacomentsy_plugin_started = true;
+        
+        updateCSSVars();
+        if (window.Lampa) new InlineComments().init();
+    }
+
+    if (window.appready) {
+        createSettings();
+        startPlugin();
+    } else {
+        if (window.Lampa && window.Lampa.Listener) {
+            window.Lampa.Listener.follow("app", function (e) {
+                if (e.type === "ready") {
+                    createSettings();
+                    startPlugin();
+                }
+            });
+        }
+    }
+
+})();
